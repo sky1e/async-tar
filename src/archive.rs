@@ -176,6 +176,7 @@ impl<R: Read + Unpin> Archive<R> {
             gnu_longlink: None,
             gnu_longname: None,
             pax_extensions: None,
+            longname_buffer: Vec::with_capacity(ENTRY_BUFFER_PREALLOCATION),
         })
     }
 
@@ -273,7 +274,12 @@ pub struct Entries<R: Read + Unpin> {
     gnu_longname: Option<Vec<u8>>,
     gnu_longlink: Option<Vec<u8>>,
     pax_extensions: Option<Vec<u8>>,
+    // If reading a long name gets split across multiple read calls, the result
+    // needs to be stored temporarily
+    longname_buffer: Vec<u8>,
 }
+
+pub(crate) const ENTRY_BUFFER_PREALLOCATION: usize = 512;
 
 macro_rules! ready_opt_err {
     ($val:expr) => {
@@ -325,7 +331,7 @@ impl<R: Read + Unpin> Stream for Entries<R> {
                     ))));
                 }
 
-                *this.gnu_longname = Some(ready_err!(Pin::new(fields).poll_read_all(cx)));
+                *this.gnu_longname = Some(ready_err!(Pin::new(fields).poll_read_all(this.longname_buffer, cx)));
                 *this.fields = None;
                 continue;
             }
@@ -337,7 +343,7 @@ impl<R: Read + Unpin> Stream for Entries<R> {
                          the same member",
                     ))));
                 }
-                *this.gnu_longlink = Some(ready_err!(Pin::new(fields).poll_read_all(cx)));
+                *this.gnu_longlink = Some(ready_err!(Pin::new(fields).poll_read_all(this.longname_buffer, cx)));
                 *this.fields = None;
                 continue;
             }
@@ -349,7 +355,7 @@ impl<R: Read + Unpin> Stream for Entries<R> {
                          the same member",
                     ))));
                 }
-                *this.pax_extensions = Some(ready_err!(Pin::new(fields).poll_read_all(cx)));
+                *this.pax_extensions = Some(ready_err!(Pin::new(fields).poll_read_all(this.longname_buffer, cx)));
                 *this.fields = None;
                 continue;
             }

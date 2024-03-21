@@ -16,7 +16,7 @@ use pin_project::pin_project;
 use filetime::{self, FileTime};
 
 use crate::{
-    error::TarError, header::bytes2path, other, pax::pax_extensions, Archive, Header, PaxExtensions,
+    archive::ENTRY_BUFFER_PREALLOCATION, error::TarError, header::bytes2path, other, pax::pax_extensions, Archive, Header, PaxExtensions
 };
 
 /// A read-only view into an entry of an archive.
@@ -336,15 +336,12 @@ impl<R: Read + Unpin> EntryFields<R> {
 
     pub(crate) fn poll_read_all(
         self: Pin<&mut Self>,
+        buf: &mut Vec<u8>,
         cx: &mut Context<'_>,
     ) -> Poll<io::Result<Vec<u8>>> {
-        // Preallocate some data but don't let ourselves get too crazy now.
-        let cap = cmp::min(self.size, 128 * 1024);
-        let mut buf = Vec::with_capacity(cap as usize);
-
         // Copied from futures::ReadToEnd
-        match async_std::task::ready!(poll_read_all_internal(self, cx, &mut buf)) {
-            Ok(_) => Poll::Ready(Ok(buf)),
+        match async_std::task::ready!(poll_read_all_internal(self, cx, buf)) {
+            Ok(_) => Poll::Ready(Ok(std::mem::replace(buf, Vec::with_capacity(ENTRY_BUFFER_PREALLOCATION)))),
             Err(err) => Poll::Ready(Err(err)),
         }
     }
