@@ -945,14 +945,8 @@ fn poll_read_all_internal<R: Read + ?Sized>(
     let ret;
     loop {
         if g.len == g.buf.len() {
-            unsafe {
-                g.buf.reserve(32);
-                let capacity = g.buf.capacity();
-                g.buf.set_len(capacity);
-
-                let buf = &mut g.buf[g.len..];
-                std::ptr::write_bytes(buf.as_mut_ptr(), 0, buf.len());
-            }
+            g.buf.reserve(32);
+            g.buf.resize(g.buf.capacity(), 0);
         }
 
         match async_std::task::ready!(rd.as_mut().poll_read(cx, &mut g.buf[g.len..])) {
